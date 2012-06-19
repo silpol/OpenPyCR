@@ -9,6 +9,14 @@ Also, Python 3 is an easier language to develop further, making it more likely t
 others will extend this work to make OpenPCR even better.
 
 ##Where
+Immediate needs for this client include code to make it fully cross-platform. The
+ncc binaries that allow reading of machine state are compiled for Windows and Linux,
+presumably the Linux binaries are also used for Mac. All that should be needed to
+make this cross-platform is to amend openpcrlib with default mount directories for
+OpenPCR. I (Cathal) have no intention of doing so, as I only use/endorse Linux.
+It may also be necessary to identify Linux distros other than Ubuntu if they have
+different mountpoints to the Ubuntu default (/media/OPENPCR).
+
 Further development of this library/client might head towards a Tcl/Tk GUI, locally-
 hosted webapp, or a daemon for smartphone control when connected to a networked PC.
 
