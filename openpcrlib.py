@@ -3,44 +3,7 @@ import sys
 import os
 import json
 import subprocess
-
-# Used by ncc:
 import mmap
-import ctypes
-libc = ctypes.CDLL("libc.so.6")
-
-def ncc(filen):
-    '''Behaves like "no-cache-cat" (ncc) but in pure-python. Only works in GNU/Linux,
-    as os.OS_DIRECT is a mirror of a GNU extension. The call to libc.posix_fadvise is
-    essential and may not work correctly on all platforms.
-    If this does not work correctly it is a silent failure; self-testing is essential
-    to ensure that non-caching reads are executed successfully. If not, fallback to
-    custom compiled C binaries would be necessary to get readouts.'''
-    # Must be defined in case os.open call crashes and causes exception in finally block.
-    f = 0
-    os.sync()
-    try:
-        # os.O_DIRECT *should* mean "read directly from disc, bypassing cache",
-        # but comes with a lot of bizzarre baggage regarding precise memory buffer
-        # lengths and boundaries.
-        f = os.open(filen, os.O_DIRECT | os.O_SYNC)
-        # posix_fadvise asks the kernel to cache the file according to "advice".
-        # In this case, passing "4" means "DONTNEED", or "Don't cache".
-        libc.posix_fadvise(f,0,0,4)
-        # mmap.mmap by default opens in rw mode, but because of O_RDONLY above
-        # this triggers a PermissionError. So, must use the mmap.PROT_READ
-        # flag to open in read-only mode.
-        with mmap.mmap(f, 0, prot=mmap.PROT_READ) as m:
-            fc = m.read()
-    except Exception as E:
-        #print("Exception attempting to open file with pyncc:",E,file=sys.stderr)
-        raise IOError("Exception attempting to open file with pyncc: "+str(E))
-    finally:
-        # f is positive if successfully opened.
-        if f > 0: os.close(f)
-    # Return until first null character.
-    return fc.split(b"\0",1)[0]
-
 
 class PCRStep:
     def __init__(self, time_s, temp_c, title):
@@ -171,7 +134,8 @@ class OpenPCR:
             f = os.open(filen, os.O_DIRECT | os.O_SYNC)
             # posix_fadvise asks the kernel to cache the file according to "advice".
             # In this case, passing "4" means "DONTNEED", or "Don't cache".
-            libc.posix_fadvise(f,0,0,4)
+            #libc.posix_fadvise(f,0,0,4)
+            os.posix_fadvise(f, 0, 0, os.POSIX_FADV_DONTNEED)
             # mmap.mmap by default opens in rw mode, but because of O_RDONLY above
             # this triggers a PermissionError. So, must use the mmap.PROT_READ
             # flag to open in read-only mode.
