@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import curses
 import time
+import sys
 from openpcrlib import OpenPCR
-from sys import argv, stdin
 
 class CursesDisplay():
     def __init__(self,scr):
@@ -60,18 +60,21 @@ def initOpenPCR():
         Dev = OpenPCR()
         return Dev
     except AssertionError:
-        print("OpenPCR not available at specified mountpoint.")
-        exit() # Cut losses!
+        print("OpenPCR not available at specified mountpoint.",file=sys.stderr)
+        exit(1)
 
 if len(argv) < 2:
     usage()
-elif argv[1] == 'status':
+elif sys.argv[1] == 'status':
     Dev = initOpenPCR()
     Dev.printstatus()
-elif argv[1] == 'monitor':
+elif sys.argv[1] == 'monitor':
     Dev = initOpenPCR()
     CursesMonitor()
-elif argv[1] == 'sendstring':
+elif sys.argv[1] == 'stop':
+    Dev = initOpenPCR()
+    Dev.stop()
+elif sys.argv[1] == 'sendstring':
     Dev = initOpenPCR()
     if len(argv) != 3:
         print("You must provide a program string.")
@@ -79,28 +82,28 @@ elif argv[1] == 'sendstring':
     else:
         print("Sending: "+argv[2])
         Dev.sendprogram(argv[2])
-elif argv[1] == 'sendprogram':
+elif sys.argv[1] == 'sendprogram':
     Dev = initOpenPCR()
     if len(argv) != 3:
         print("You must provide a file to upload. Use '-' for stdin.\n Programs must be in YAML format.")
         usage()
     else:
-        if argv[2] == '-':
-            Program = stdin.read().strip()
+        if sys.argv[2] == '-':
+            Program = sys.stdin.read().strip()
             print(Program)
             Dev.sendprogram(Program)
         else:
             with open(argv[2], encoding='utf-8', mode='r') as ReadIn:
                 Program = ReadIn.read().strip()
             Dev.sendprogram(Program)
-elif argv[1] == 'log':
+elif sys.argv[1] == 'log':
     Dev = initOpenPCR()
     if len(argv) != 4:
         print("You must provide a logging interval and an output.\n Use '-' to specify stdout.")
         usage()
     else:
         interval = int(argv[2])
-        if argv[3] == '-':
+        if sys.argv[3] == '-':
             while True:
                 LogLine = Dev.csvstatus()
                 if LogLine == 'Complete':
@@ -110,7 +113,7 @@ elif argv[1] == 'log':
                     break
                 print(LogLine)
         else:
-            logfile = argv[3]
+            logfile = sys.argv[3]
             with open(logfile, encoding='utf-8', mode='a') as LogFile:
                 while True:
                     LogLine = Dev.csvstatus()
@@ -123,13 +126,13 @@ elif argv[1] == 'log':
                     else:
                         LogFile.write(LogLine+'\n')
                     time.sleep(interval)
-elif argv[1] == 'about':
+elif sys.argv[1] == 'about':
     print("Foo")
     with open("README.md", encoding='utf-8', mode='r') as ReadIn:
         AboutMsg = ReadIn.read()
     print(AboutMsg)
         
-elif argv[1] == 'proghelp':
+elif sys.argv[1] == 'proghelp':
     print('''How to write programs for OpenPCR:
 
  Programs for OpenPCR should be written in YAML format.
