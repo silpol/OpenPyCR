@@ -44,7 +44,7 @@ Programs cannot be longer than 252 characters.
 Programs cannot have more than 16 'top level' steps.
 Programs cannot have of more than 20 cycles.
 Programs cannot have of more than 30 steps.
-Lid temperature cannot be expressed as a decimal.
+Lid temperature can only be expressed as a natural, round number.
 '''
 
 class CursesDisplay():
