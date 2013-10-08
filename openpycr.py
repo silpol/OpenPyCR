@@ -2,11 +2,55 @@
 import curses
 import time
 import sys
+import argparse
 from openpcrlib import OpenPCR
 
+proghelp = '''\
+How to write programs for OpenPCR:
+
+Programs for OpenPCR should be written in YAML format.
+This format specifies "key=value" pairs separated by
+the ampersand ("&") symbol, as in:
+"key1=value1&key2=value2"
+
+All OpenPCR programs start with the pair "s=ACGTC".
+
+If a new program is being uploaded, this is followed
+by "c=start" to start the device, thus:
+"s=ACGTC&c=start"
+
+Additional keys specify global program parameters,
+as well as the program itself. Global params are:
+
+n: Program name. i.e. "n=OpenPyCR Test"
+l: Lid temperature, i.e. "l=95"
+d: A value used in verification, automatically added
+    by OpenPyCR. Don't specify.
+o: Contrast of the display on the device. In early
+    models, this may instead be "t".
+
+To format a program (keyed "p"), use this idiom:
+p=(repetitions[s|t|label][s|t|label][s|t|label])
+
+Where "s" is seconds and "t" is temperature. i.e.,
+to program an archetypical PCR, use:
+p=(35[20|95|Denature][10|55|Anneal][90|70|Extend])
+
+Additional round-bracketed repeat statements may
+be used to create more complex programs:
+p=(35[20|95|Den][10|55|Ann][90|70|Ext])(1[999|4|Cool])
+
+Programs cannot be longer than 252 characters.
+Programs cannot have more than 16 'top level' steps.
+Programs cannot have of more than 20 cycles.
+Programs cannot have of more than 30 steps.
+Lid temperature cannot be expressed as a decimal.
+'''
+
 class CursesDisplay():
-    def __init__(self,scr):
-        self.scr = scr
+    def __init__(self, screen, dev):
+        self.scr = screen
+        self.dev = dev
 
     def monitor(self):
         self.scr.nodelay(1) # Make self.scr.getch nonblocking.
@@ -23,7 +67,7 @@ class CursesDisplay():
         self.scr.refresh()
 
     def printStatusMsg(self):
-        S = Dev.readstatus()
+        S = self.dev.readstatus()
         try:
             PrettyStatus = 'Welcome to the OpenPyCR Real-time Monitor.\n'
             PrettyStatus += 'Current Program: {0}\n'.format(S['program'])
@@ -35,140 +79,86 @@ class CursesDisplay():
             PrettyStatus = 'Run Finished.\n(Press any key to exit monitor mode)'
         self.writeln(PrettyStatus)
 
-def CursesMonitor():
+def CursesMonitor(dev):
     stdscr = curses.initscr()
     curses.cbreak()
-    Console = CursesDisplay(stdscr)
+    Console = CursesDisplay(stdscr, dev)
     Console.monitor()
     curses.nocbreak()
     curses.endwin()
 
-def usage():
-    print("Usage: openpycr [option] <args..>\nOptions:")
-    print(" status - Print a one-time status message.")
-    print(" monitor - Open a curses monitor for OpenPCR device")
-    print(" sendstring <string> - Send a program string to the device")
-    print(" sendprogram <file> - Upload a program from flat text file or\n       stdin (use '-') to the device")
-    print(" stop - Send a stop signal to the device")
-    print(" log <interval> <file> - Append csv-formatted log data every\n       <interval> seconds to a file or stdout (use '-')")
-    print(" proghelp - Print information on how to format programs.")
-    print(" about - Print an informative message about OpenPyCR.")
+#======= Functions for Terminal Use Follow ========
+def status(device, args):
+    device.printstatus()
 
-Dev = None
-def initOpenPCR():
-    Dev = OpenPCR()
-    if not Dev.ready:
-        print("OpenPCR not available at specified mountpoint.",file=sys.stderr)
-        sys.exit(1)
-    return Dev
+def monitor(device, args):
+    CursesMonitor(device)
 
-if len(sys.argv) < 2:
-    usage()
-elif sys.argv[1] == 'status':
-    Dev = initOpenPCR()
-    Dev.printstatus()
-elif sys.argv[1] == 'monitor':
-    Dev = initOpenPCR()
-    CursesMonitor()
-elif sys.argv[1] == 'stop':
-    Dev = initOpenPCR()
-    Dev.stop()
-elif sys.argv[1] == 'sendstring':
-    Dev = initOpenPCR()
-    if len(sys.argv) != 3:
-        print("You must provide a program string.")
-        usage()
-    else:
-        print("Sending: ", sys.argv[2])
-        Dev.sendprogram(sys.argv[2])
-elif sys.argv[1] == 'sendprogram':
-    Dev = initOpenPCR()
-    if len(sys.argv) != 3:
-        print("You must provide a file to upload. Use '-' for stdin.\n Programs must be in YAML format.")
-        usage()
-    else:
-        if sys.argv[2] == '-':
-            Program = sys.stdin.read().strip()
-            print(Program)
-            Dev.sendprogram(Program)
-        else:
-            with open(sys.argv[2], encoding='utf-8', mode='r') as ReadIn:
-                Program = ReadIn.read().strip()
-            Dev.sendprogram(Program)
-elif sys.argv[1] == 'log':
-    Dev = initOpenPCR()
-    if len(sys.argv) != 4:
-        print("You must provide a logging interval and an output.\n Use '-' to specify stdout.")
-        usage()
-    else:
-        interval = int(sys.argv[2])
-        if sys.argv[3] == '-':
+def send(device, args):
+    with args.program_file as InF:
+        program = InF.read().strip()
+    device.sendprogram(program)
+
+def stop(device, args):
+    device.stop()
+    
+def log(device, args):
+    # args.interval and args.output_file
+    with args.output_file as LogF:
+        lastflush = time.time()
+        try:
             while True:
-                LogLine = Dev.csvstatus()
-                if LogLine == 'Complete':
-                    break # Don't provide feedback, might break piping.
-                if LogLine == 'Inactive':
-                    print("Program not running; OpenPCR Inactive.")
+                LogLine = device.csvstatus(args.columns)
+                if device.active:
+                    LogF.write(LogLine+"\n")
+                else:
                     break
-                print(LogLine)
-        else:
-            logfile = sys.argv[3]
-            with open(logfile, encoding='utf-8', mode='a') as LogFile:
-                while True:
-                    LogLine = Dev.csvstatus()
-                    if LogLine == 'Complete':
-                        print("Program complete, no more logs to give.")
-                        break
-                    elif LogLine == 'Inactive':
-                        print("Program not running; OpenPCR Inactive.")
-                        break
-                    else:
-                        LogFile.write(LogLine+'\n')
-                    time.sleep(interval)
-elif sys.argv[1] == 'about':
-    print("Foo")
-    with open("README.md", encoding='utf-8', mode='r') as ReadIn:
-        AboutMsg = ReadIn.read()
-    print(AboutMsg)
-        
-elif sys.argv[1] == 'proghelp':
-    print('''How to write programs for OpenPCR:
+                if lastflush >= args.flush_interval:
+                    lastflush = time.time()
+                    LogF.flush()
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            pass
 
- Programs for OpenPCR should be written in YAML format.
- This format specifies "key=value" pairs separated by
- the ampersand ("&") symbol, as in:
- "key1=value1&key2=value2"
+P = argparse.ArgumentParser(
+                description = "OpenPyCR: A pure-python controller and monitor for the OpenPCR Thermal Cycler.",
+                epilog = "by Cathal Garvey, copyright 2013, released as Free Software under the GNU AGPL v3 or later.")
+P.add_argument("-m","--device-mountpoint",default="/media/OPENPCR",type=str,
+                    help="Path of the OpenPCR device. On Debian GNU/Linux (incl. Ubuntu) the default is usually correct.")
+Subs = P.add_subparsers(help="Subcommands: Try calling '-h' or '--help' after these to get more specific help, if available.")
 
- All OpenPCR programs start with the pair "s=ACGTC".
+P_status = Subs.add_parser('status',help="Print a oen-time status message.")
+P_status.set_defaults(function = status)
 
- If a new program is being uploaded, this is followed
- by "c=start" to start the device, thus:
- "s=ACGTC&c=start"
+P_monitor = Subs.add_parser('monitor',help="Open a curses monitor for OpenPCR device.")
+P_monitor.set_defaults(function = monitor)
 
- Additional keys specify global program parameters,
- as well as the program itself. Global params are:
+P_send = Subs.add_parser('send',help="Send a string or file as a program to the OpenPCR device.")
+P_send.add_argument("-p","--program_file",type=argparse.FileType("r"),default=sys.stdin,
+                        help="Program to send. If not specified, reads from standard input.")
+P_send.set_defaults(function = send)
 
- n: Program name. i.e. "n=OpenPyCR Test"
- l: Lid temperature, i.e. "l=95"
- d: A value used in verification, automatically added
-     by OpenPyCR. Don't specify.
- o: Contrast of the display on the device. In early
-     models, this may instead be "t".
+P_stop = Subs.add_parser('stop',help='Send the stop signal to the OpenPCR to terminate current program.')
+P_stop.set_defaults(function = stop)
 
- To format a program (keyed "p"), use this idiom:
- p=(repetitions[s|t|label][s|t|label][s|t|label])
+P_log = Subs.add_parser('log',help='Print (or append to file) status information in csv format at set intervals.')
+P_log.set_defaults(function = log)
+P_log.add_argument("-i","--interval",type=int,default=5,help="Interval in seconds between log entries.")
+P_log.add_argument("-o","--output-file",type=argparse.FileType("a"),default=sys.stdout,
+                        help="File to append log output to. Default is stdout; print to terminal.")
+P_log.add_argument("--columns",nargs="+",type=str,default=['currenttime','elapsedsecs','cycle','blocktemp'],
+                        help="Columns to print to log. Options are: state job blocktemp lidtemp elapsedsecs secsleft currentstep cycle program nonce minsleft hoursleft timeleft currenttime")
+P_log.add_argument("--flush-interval",type=int,default=30,
+                        help="Interval by which to flush outut stream; may help prevent data loss on crash. If unsure, leave alone.")
 
- Where "s" is seconds and "t" is temperature. i.e.,
- to program an archetypical PCR, use:
- p=(35[20|95|Denature][10|55|Anneal][90|70|Extend])
+P_proghelp = Subs.add_parser('proghelp',help='Print information on correct formatting for OpenPCR programs.')
+P_proghelp.set_defaults(function = lambda x,y:print(proghelp))
 
- Additional round-bracketed repeat statements may
- be used to create more complex programs:
- p=(35[20|95|Den][10|55|Ann][90|70|Ext])(1[999|4|Cool])
-
- Programs cannot be longer than 252 characters.
- Programs cannot have more than 16 'top level' steps.
- Programs cannot have of more than 20 cycles.
- Programs cannot have of more than 30 steps.
- Lid temperature cannot be expressed as a decimal.
-''')
+# Parse arguments, and pass arguments into the associated function for handling
+# according to appropriate subcommand.
+A = P.parse_args()
+Dev = OpenPCR(devicepath = A.device_mountpoint)
+if not hasattr(A,"function"):
+    P.print_usage()
+else:
+    A.function(Dev, A)

@@ -72,6 +72,7 @@ class OpenPCRError(Exception):
 class OpenPCR:
     def __init__(self,devicepath=''):
         self.devicepath = devicepath or '/media/OPENPCR/'
+        self.active = False
 
     @property
     def ready(self):
@@ -84,6 +85,7 @@ class OpenPCR:
         'Sends a program to the OpenPCR and prints a verification if successful.'
         if not self.ready:
             raise OpenPCRError("Cannot send program as device is not ready.")
+        # TODO: Clean this mess up.
         CurrentNonce = self.readstatus()['nonce']
         # Nonces should overflow, but no point going larger than 99, maybe even 9.
         NewNonce = CurrentNonce + 1 if CurrentNonce < 100 else 1
@@ -119,7 +121,6 @@ class OpenPCR:
             print("OpenPCR not responding to checkstatus calls. Giving up.")
 
     def _sendprogram(self,program):
-        # Removed encoding, unlikely it matters at all.
         with open(os.path.join(self.devicepath,'CONTROL.TXT'), mode='w') as Fout:
             Fout.write(program)
 
@@ -135,6 +136,8 @@ class OpenPCR:
         If this does not work correctly it is a silent failure; self-testing is essential
         to ensure that non-caching reads are executed successfully. If not, fallback to
         custom compiled C binaries would be necessary to get readouts.'''
+        if not self.ready:
+            raise OpenPCRError("Device not ready, cannot read status.")
         filen = os.path.join(self.devicepath,'STATUS.TXT')
         with open(filen,"rb") as InF:
             os.posix_fadvise(InF.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
@@ -147,7 +150,6 @@ class OpenPCR:
 
     def readstatus(self):
         'Calls ncc and translates output into a dictionary of values.'
-        assert(self.devicepath)
         statustxt = self.ncc()
         status = dict([x.split("=") for x in statustxt.split("&")])
         statusd = {'state': status.get('s','Unknown'),
@@ -161,6 +163,7 @@ class OpenPCR:
                    'program': status.get('n','Unknown'),
                    'nonce': int(status.get('d',-1)),
                    }
+        self.active = False if statusd['state'] in ['Complete','Inactive'] else True
         if statusd['nonce'] == -1:
             raise IOError("Received no program-identifier number from device - failure to communicate/reprogram?") 
         # Now to clean up TIME ITSELF
