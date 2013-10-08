@@ -32,40 +32,6 @@ if sys.version_info[:2] < (3,3):
         # Add an empty shim so it doesn't crash later.
         if not hasattr(os, "posix_fadvise"): os.posix_fadvise = lambda w,x,y,a:None
 
-# === Not yet used ===
-class PCRStep:
-    def __init__(self, time_s, temp_c, title):
-        self.time = time_s
-        self.temp = temp_c
-        self.title = title
-
-    def __str__(self):
-        return '[{0}|{1}|{2}]'.format(self.time, self.temp, self.title)
-        
-class PCRCycle:
-    def __init__(self, repeats, *steps):
-        selt.repeats = repeats
-        self.steps = steps
-
-    def __str__(self):
-        return '({0}{1})'.format(self.repeats, ''.join([str(x) for x in self.steps]))
-
-class OpenPCRProgram:
-    def __init__(self, name, *cycles, lid_temp = 95):
-        self.name = name
-        self.lid_temp = lid_temp
-        # Sample program:
-        # s=ACGTC&l=95&c=start&
-        # n=CCR5(HIV Resistance)&
-        # p=(1[300|95|Initial Burn]) 
-        #   (35[30|95|Denature][30|68|Annealing][30|72|Extension])        self.name = name
-        # End sample
-        # Pythonic representation:
-        # PCRCycle(1, PCRStep(300, 95, "Initial Burn"), PCRCycle(35, PCRStep(30, 95, "Denature"), PCRStep(30, 68, "Annealing"), PCRStep(30, 72, Extension))
-    def __str__(self):
-        return 's=ACGTC&' + 'l={0}&c=start&n={1}&'.format(self.lid_temp, self.name) + ''.join([str(x) for x in self.cycles])
-# ====================
-
 class OpenPCRError(Exception):
     pass
 

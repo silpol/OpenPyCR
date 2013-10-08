@@ -1,0 +1,9 @@
+Lid: 95
+Title: CCR5(HIV Resistance)
+Note: Program used at Genspace to check for CCR5 mutations.
+
+300s @ 95C Initial Burn
+x35:
+  30s @ 95C Denature
+  30s @ 68C Annealing
+  30s @ 72C Extension

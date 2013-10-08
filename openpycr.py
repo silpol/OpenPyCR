@@ -80,6 +80,10 @@ def log(device, args):
         except KeyboardInterrupt:
             pass
 
+def pcrcompile(device, args):
+    with args.program_file as InF:
+        print(PCRCompiler.parse_program(InF.read()))
+
 P = argparse.ArgumentParser(
                 description = "OpenPyCR: A pure-python controller and monitor for the OpenPCR Thermal Cycler.",
                 epilog = "by Cathal Garvey, copyright 2013, released as Free Software under the GNU AGPL v3 or later.")
@@ -94,7 +98,7 @@ P_monitor = Subs.add_parser('monitor',help="Open a curses monitor for OpenPCR de
 P_monitor.set_defaults(function = monitor)
 
 P_send = Subs.add_parser('send',help="Send a string or file as a program to the OpenPCR device.")
-P_send.add_argument("-p","--program_file",type=argparse.FileType("r"),default=sys.stdin,
+P_send.add_argument("-p","--program-file",type=argparse.FileType("r"),default=sys.stdin,
                         help="Program to send. If not specified, reads from standard input.")
 P_send.set_defaults(function = send)
 
@@ -110,6 +114,11 @@ P_log.add_argument("--columns",nargs="+",type=str,default=['currenttime','elapse
                         help="Columns to print to log. Options are: state job blocktemp lidtemp elapsedsecs secsleft currentstep cycle program nonce minsleft hoursleft timeleft currenttime")
 P_log.add_argument("--flush-interval",type=int,default=30,
                         help="Interval by which to flush outut stream; may help prevent data loss on crash. If unsure, leave alone.")
+
+P_compile = Subs.add_parser('compile',help="Compile a program in OpenPyCR format to the lower-level OpenPCR format.")
+P_compile.set_defaults(function=pcrcompile)
+P_compile.add_argument("-p","--program-file",type=argparse.FileType("r"),default=sys.stdin,
+                        help="Program to send. If not specified, reads from standard input.")
 
 # Parse arguments, and pass arguments into the associated function for handling
 # according to appropriate subcommand.

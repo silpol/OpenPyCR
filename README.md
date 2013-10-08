@@ -15,8 +15,13 @@ with the normal controller application, too.
 ## How do I use this?
 Right now, OpenPyCR is a terminal application only. To use it, go to the folder
 where it was downloaded (it must have openpcrlib.py in the same folder, for now),
-and type 'python3 openpycr.py --help' for usage information. For more specific
-help on the subcommands try 'python3 openpycr (subcommand) --help'.
+and type: 
+
+    python3 openpycr.py --help
+
+for usage information. For more specific help on the subcommands try:
+
+    python3 openpycr (subcommand) --help
 
 OpenPyCR uses a simple format for specifying PCR programs which is 'compiled'
 down to the YAML form used by OpenPCR. Programs are written as flat text files
@@ -50,9 +55,8 @@ x35:
 ``` 
 
 This program can be saved to a file, and then sent to the OpenPCR with:
-```
-python3 openpycr.py send Programs/sample.pcr
-```
+
+    python3 openpycr.py send Programs/Sample.pcr
 
 OpenPyCR compiles the above program (included) to the far less readable OpenPCR
 format expected by the device firmware:

@@ -1,0 +1,9 @@
+Title: Canonical PCR
+Lid: 95
+
+60s @ 95C Burn In
+x35:
+    20s @ 95C Denature
+    15s @ 65C Anneal
+    30s @ 72C Extend
+20s @ 4C Chill
