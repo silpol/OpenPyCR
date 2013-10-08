@@ -56,14 +56,13 @@ def usage():
 
 Dev = None
 def initOpenPCR():
-    try:
-        Dev = OpenPCR()
-        return Dev
-    except AssertionError:
+    Dev = OpenPCR()
+    if not Dev.ready:
         print("OpenPCR not available at specified mountpoint.",file=sys.stderr)
-        exit(1)
+        sys.exit(1)
+    return Dev
 
-if len(argv) < 2:
+if len(sys.argv) < 2:
     usage()
 elif sys.argv[1] == 'status':
     Dev = initOpenPCR()
@@ -76,15 +75,15 @@ elif sys.argv[1] == 'stop':
     Dev.stop()
 elif sys.argv[1] == 'sendstring':
     Dev = initOpenPCR()
-    if len(argv) != 3:
+    if len(sys.argv) != 3:
         print("You must provide a program string.")
         usage()
     else:
-        print("Sending: "+argv[2])
-        Dev.sendprogram(argv[2])
+        print("Sending: ", sys.argv[2])
+        Dev.sendprogram(sys.argv[2])
 elif sys.argv[1] == 'sendprogram':
     Dev = initOpenPCR()
-    if len(argv) != 3:
+    if len(sys.argv) != 3:
         print("You must provide a file to upload. Use '-' for stdin.\n Programs must be in YAML format.")
         usage()
     else:
@@ -93,16 +92,16 @@ elif sys.argv[1] == 'sendprogram':
             print(Program)
             Dev.sendprogram(Program)
         else:
-            with open(argv[2], encoding='utf-8', mode='r') as ReadIn:
+            with open(sys.argv[2], encoding='utf-8', mode='r') as ReadIn:
                 Program = ReadIn.read().strip()
             Dev.sendprogram(Program)
 elif sys.argv[1] == 'log':
     Dev = initOpenPCR()
-    if len(argv) != 4:
+    if len(sys.argv) != 4:
         print("You must provide a logging interval and an output.\n Use '-' to specify stdout.")
         usage()
     else:
-        interval = int(argv[2])
+        interval = int(sys.argv[2])
         if sys.argv[3] == '-':
             while True:
                 LogLine = Dev.csvstatus()

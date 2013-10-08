@@ -5,6 +5,34 @@ import json
 import subprocess
 import mmap
 
+if "linux" not in sys.platform:
+    print("OpenPyCR uses system calls that are only available on Linux platforms. Your platform -",
+            sys.platform,"- is probably incompatible, so reading OpenPCR status is probably impossible and this",
+            "program will probably crash. This is *not a bug* if you are using a platform other",
+            "than linux, and there is no plan to support non-free/libre platforms.", file=sys.stderr)
+if sys.version_info[:2] < (3,3):
+    # native posix_fadvise introduced in 3.3, can shim in with ctypes:
+    print("Your Python version is outdated and lacks the posix_fadvise system call in os.",
+          "Attempting to shim this in using ctypes..", file=sys.stderr)
+    import ctypes
+    try:
+        os.POSIX_FADV_NORMAL     = 0
+        os.POSIX_FADV_RANDOM     = 1
+        os.POSIX_FADV_SEQUENTIAL = 2
+        os.POSIX_FADV_WILLNEED   = 3
+        os.POSIX_FADV_DONTNEED   = 4
+        os.POSIX_FADV_NOREUSE    = 5
+        # The above will (or should?) always work, so do that first.
+        libc = ctypes.CDLL("libc.so.6")
+        os.posix_fadvise = libc.posix_fadvise
+        print("posix_fadvise shim successful, nothing to see here. Consider updating Python anyway.", file=sys.stderr)
+    except OSError:
+        print("Attempted to open libc.so.6 to import the posix_fadvise system call failed.",
+              "Reading from OpenPCR will not function correctly as disk/os level caching will interfere.",file=sys.stderr)
+        # Add an empty shim so it doesn't crash later.
+        if not hasattr(os, "posix_fadvise"): os.posix_fadvise = lambda w,x,y,a:None
+
+# === Not yet used ===
 class PCRStep:
     def __init__(self, time_s, temp_c, title):
         self.time = time_s
@@ -36,42 +64,28 @@ class OpenPCRProgram:
         # PCRCycle(1, PCRStep(300, 95, "Initial Burn"), PCRCycle(35, PCRStep(30, 95, "Denature"), PCRStep(30, 68, "Annealing"), PCRStep(30, 72, Extension))
     def __str__(self):
         return 's=ACGTC&' + 'l={0}&c=start&n={1}&'.format(self.lid_temp, self.name) + ''.join([str(x) for x in self.cycles])
+# ====================
+
+class OpenPCRError(Exception):
+    pass
 
 class OpenPCR:
     def __init__(self,devicepath=''):
-        self.platform = sys.platform[:3]
-        # Linux       'lin' (Also for POSIX generally?)
-        # Cygwin      'cyg'
-        # OS/2 (/EMX) 'os2'
-        # Mac OS X    'dar'
-        # Windows     'win'
-        
-        self.deviceath = devicepath or self.DefaultPlatformPath()
+        self.devicepath = devicepath or '/media/OPENPCR/'
 
-        if not os.path.exists(self.devicepath):
-            print("Directory specified (default /media/OPENPCR) does not exist. Is OpenPCR turned on?")
-            self.devicepath = ''
-        assert(self.devicepath)
-
-    def DefaultPlatformPath(self):
-        'Checks "usual" mount locations on supported platforms and returns directory if successful.'
-        # Use os.walk to seek out alternatives if not found?
-        if self.platform == 'lin': return '/media/OPENPCR/' # Ubuntu mountpoint, at least.
-        elif self.platform in ['win','dar','os2','cyg']:
-            print({'win':"Windows",'dar':"Darwin/Mac",'cyg':"Cygwin/Windows",'os2':"OS/2"}[self.platform],
-                    "is not yet supported, but *may* work if you manually invoke the OpenPCR object with",
-                    "'devicepath' argument pointing to the OpenPCR device mountpoint.")
+    @property
+    def ready(self):
+        if os.path.exists(self.devicepath) and os.path.exists(os.path.join(self.devicepath,"STATUS.TXT")):
+            return True
         else:
-            print("Unknown platform; OpenPyCR is currently designed to work on Linux only.",
-                  "You can try to manually invoke the OpenPCR object with 'devicepath' argument",
-                  " pointing to the OpenPCR mountpoint, but don't get your hopes up.")
+            return False
 
     def sendprogram(self, program):
         'Sends a program to the OpenPCR and prints a verification if successful.'
-        assert(self.devicepath)
-        Status = self.readstatus()
-        CurrentNonce = Status['nonce']
-        # Nonces should overflow, but no point going larger than 100; waste of transmitted chars!
+        if not self.ready:
+            raise OpenPCRError("Cannot send program as device is not ready.")
+        CurrentNonce = self.readstatus()['nonce']
+        # Nonces should overflow, but no point going larger than 99, maybe even 9.
         NewNonce = CurrentNonce + 1 if CurrentNonce < 100 else 1
         NonceCMD = 'd={}'.format(str(NewNonce))
         # Chop up program string, insert nonce, and reassemble for sending.
@@ -117,38 +131,19 @@ class OpenPCR:
 
     def ncc(self):
         '''Low-level. Calls ncc binary for appropriate platform, returns raw output as string.
-        Behaves like "no-cache-cat" (ncc) but in pure-python. Only works in GNU/Linux,
-        as os.OS_DIRECT is a mirror of a GNU extension. The call to libc.posix_fadvise is
-        essential and may not work correctly on all platforms.
+        Behaves like "no-cache-cat" (ncc) but in pure-python. Only works on Unix, possibly Linux.
         If this does not work correctly it is a silent failure; self-testing is essential
         to ensure that non-caching reads are executed successfully. If not, fallback to
         custom compiled C binaries would be necessary to get readouts.'''
         filen = os.path.join(self.devicepath,'STATUS.TXT')
-        # Must be defined in case os.open call crashes and causes exception in finally block.
-        f = 0
-        os.sync()
-        try:
-            # os.O_DIRECT *should* mean "read directly from disc, bypassing cache",
-            # but comes with a lot of bizzarre baggage regarding precise memory buffer
-            # lengths and boundaries.
-            f = os.open(filen, os.O_DIRECT | os.O_SYNC)
-            # posix_fadvise asks the kernel to cache the file according to "advice".
-            # In this case, passing "4" means "DONTNEED", or "Don't cache".
-            #libc.posix_fadvise(f,0,0,4)
-            os.posix_fadvise(f, 0, 0, os.POSIX_FADV_DONTNEED)
-            # mmap.mmap by default opens in rw mode, but because of O_RDONLY above
-            # this triggers a PermissionError. So, must use the mmap.PROT_READ
-            # flag to open in read-only mode.
-            with mmap.mmap(f, 0, prot=mmap.PROT_READ) as m:
-                fc = m.read()
-        except Exception as E:
-            #print("Exception attempting to open file with pyncc:",E,file=sys.stderr)
-            raise IOError("Exception attempting to open file with pyncc: "+str(E))
-        finally:
-            # f is positive if successfully opened.
-            if f > 0: os.close(f)
+        with open(filen,"rb") as InF:
+            os.posix_fadvise(InF.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+            fc = InF.read()
         # Return until first null character.
-        return fc.split(b"\0",1)[0]
+        # Reading in non-binary mode leads to odd extra whitespace due to nulls
+        # followed by whitespace; trimming nulls from a string seems silly, so
+        # stick to binary, strip and decode; let Python re-null strings as desired.
+        return fc.split(b"\0",1)[0].decode()
 
     def readstatus(self):
         'Calls ncc and translates output into a dictionary of values.'
