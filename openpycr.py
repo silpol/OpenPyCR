@@ -4,48 +4,7 @@ import time
 import sys
 import argparse
 from openpcrlib import OpenPCR
-
-proghelp = '''\
-How to write programs for OpenPCR:
-
-Programs for OpenPCR should be written in YAML format.
-This format specifies "key=value" pairs separated by
-the ampersand ("&") symbol, as in:
-"key1=value1&key2=value2"
-
-All OpenPCR programs start with the pair "s=ACGTC".
-
-If a new program is being uploaded, this is followed
-by "c=start" to start the device, thus:
-"s=ACGTC&c=start"
-
-Additional keys specify global program parameters,
-as well as the program itself. Global params are:
-
-n: Program name. i.e. "n=OpenPyCR Test"
-l: Lid temperature, i.e. "l=95"
-d: A value used in verification, automatically added
-    by OpenPyCR. Don't specify.
-o: Contrast of the display on the device. In early
-    models, this may instead be "t".
-
-To format a program (keyed "p"), use this idiom:
-p=(repetitions[s|t|label][s|t|label][s|t|label])
-
-Where "s" is seconds and "t" is temperature. i.e.,
-to program an archetypical PCR, use:
-p=(35[20|95|Denature][10|55|Anneal][90|70|Extend])
-
-Additional round-bracketed repeat statements may
-be used to create more complex programs:
-p=(35[20|95|Den][10|55|Ann][90|70|Ext])(1[999|4|Cool])
-
-Programs cannot be longer than 252 characters.
-Programs cannot have more than 16 'top level' steps.
-Programs cannot have of more than 20 cycles.
-Programs cannot have of more than 30 steps.
-Lid temperature can only be expressed as a natural, round number.
-'''
+import PCRCompiler
 
 class CursesDisplay():
     def __init__(self, screen, dev):
@@ -97,6 +56,7 @@ def monitor(device, args):
 def send(device, args):
     with args.program_file as InF:
         program = InF.read().strip()
+    program = PCRCompiler.parse_program(program)
     device.sendprogram(program)
 
 def stop(device, args):
@@ -150,9 +110,6 @@ P_log.add_argument("--columns",nargs="+",type=str,default=['currenttime','elapse
                         help="Columns to print to log. Options are: state job blocktemp lidtemp elapsedsecs secsleft currentstep cycle program nonce minsleft hoursleft timeleft currenttime")
 P_log.add_argument("--flush-interval",type=int,default=30,
                         help="Interval by which to flush outut stream; may help prevent data loss on crash. If unsure, leave alone.")
-
-P_proghelp = Subs.add_parser('proghelp',help='Print information on correct formatting for OpenPCR programs.')
-P_proghelp.set_defaults(function = lambda x,y:print(proghelp))
 
 # Parse arguments, and pass arguments into the associated function for handling
 # according to appropriate subcommand.
