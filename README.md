@@ -1,22 +1,55 @@
-#OpenPyCR
+# OpenPyCR
+A pure-python controller and monitor application for the OpenPCR thermal cycler.
+by Cathal Garvey, copyright 2013, licensed under the GNU Affero GPL v3 or later.
 
-##What
-A simple Python 3 library/client for controlling and monitoring OpenPCR.
-##Why
-The official OpenPCR client is written in Adobe Air, which is no longer supported on
-Linux and isn't an Open Source platform in any case.
-Also, Python 3 is an easier language to develop further, making it more likely that
-others will extend this work to make OpenPCR even better.
+## What is OpenPyCR?
+OpenPyCR is an alternative controller/monitor program for the OpenPCR. The program
+provided by the OpenPCR team for the device is based on Adobe Air, a closed-source
+and insecure platform, and a platform for which linux support was withdrawn long ago.
 
-##Where
-Immediate needs for this client include code to make it fully cross-platform. The
-ncc binaries that allow reading of machine state are compiled for Windows and Linux,
-presumably the Linux binaries are also used for Mac. All that should be needed to
-make this cross-platform is to amend openpcrlib with default mount directories for
-OpenPCR. I (Cathal) have no intention of doing so, as I only use/endorse Linux.
-It may also be necessary to identify Linux distros other than Ubuntu if they have
-different mountpoints to the Ubuntu default (/media/OPENPCR).
+While the OpenPCR developers were kind and patient enough to assist me in getting
+the Adobe Air application to work correctly on Ubuntu, a better system was needed
+for Linux users generally, and there were things I wanted to do that aren't possible
+with the normal controller application, too.
 
+OpenPCR has an odd control structure. Rather than acting as a serial or USB device,
+it masquerades as a mass-storage device, with two key files: STATUS.TXT and CONTROL.TXT.
+The former is on the device at power-up time, and can be read from to get the current
+state of the OpenPCR device. The latter, if written or overwritten, instructs the
+device to follow the contained instructions (in restricted YAML format).
+
+It turned out while developing OpenPyCR that writing new programs (directing the
+device) was trivial, while reading from the device (monitoring, logging, etc.)
+was quite hard to achieve due to system level caching.
+
+## Platform Specificity
+The normal client for OpenPCR makes use of a special application called "ncc" to
+read the status of the device, because all major operating systems use disk caches
+that assume the status file on the OpenPCR does not vary between reads (which it
+does!). Without this ncc application, the system always returns the value it first
+read from the device without checking whether its changed.
+
+The ncc binaries are written for Windows, Mac and Linux separately, and must be
+compiled for each architecture separately, so users with Raspberry Pi control
+boards must recompile ncc for ARM, for example. One goal of OpenPyCR was to do
+away with architecture-specific compilation, so OpenPyCR will work on any system
+running Linux with Python installed without changes.
+
+OpenPyCR is pure-python, meaning that it requires no specially compiled C++
+binaries like the normal client. It instead relies on Linux system calls to
+guarantee that disk/file caching will not interfere with reading the status
+of the OpenPCR device.
+
+This is clean, cross-architecture, and easy, but it also means that OpenPyCR
+cannot read OpenPCR's status without interference on any platform other than
+GNU/Linux. This is *not considered a bug*.
+
+Additionally, in case it needs to be said this is written in *modern python*;
+you will require Python 3, preferably Python version 3.3, for this to work.
+Versions below 3.3 lack the os.posix_fadvise system call that is used to avoid
+caching, but a shim operation will be attempted using ctypes nevertheless.
+
+## What Next
 Further development of this library/client might head towards a Tcl/Tk GUI, locally-
 hosted webapp, or a daemon for smartphone control when connected to a networked PC.
 
@@ -30,27 +63,8 @@ programming if feedback is provided to the PC through other means; a turbidity
 meter or spectrometer might read samples and adjust cycling parameters, for example,
 a prospect unlikely to be achievable with the OpenPCR hardware as-is.
 
-##How
-###Usage
-openpycr [option] <args..>\nOptions:
-* status - Print a one-time status report to stdout
-* monitor - Open a curses monitor for OpenPCR device
-* sendstring <string> - Send a program string to the device
-* sendprogram <file> - Upload a program from flat text file or stdin (use '-') to the device
-* stop - Send a stop signal to the device
-* log <interval> <file> - Append csv-formatted log data every <interval> seconds to a file or stdout (use '-')
-* proghelp - Print information on how to format programs.
-
-###Technical
-OpenPCR uses an unconventional PC:Device interface; when connected, it mounts what
-appears to be a (very small) mass storage device called "OPENPCR". Two files in
-particular are relevant here; "CONTROL.TXT" and "STATUS.TXT"
-To upload new programs, one simply writes/overwrites "CONTROL.TXT" with the new
-program. To read the status of the device, one fetches the contents of "STATUS.TXT".
-
-However, some level of system cachine prevents repeated reading of STATUS.TXT,
-yielding the same answer as the first read every time thereafter. Extensive
-experimentation and documentation-scanning in Python 3 was fruitless in finding a
-means to avoid this problem, and so this program currently relies on the "No Cache
-Cat" binaries from the original OpenPCR distribution. A native python solution would
-be very welcome, if only to satisfy my curiousity.
+## How do I use this?
+Right now, OpenPyCR is a terminal application only. To use it, go to the folder
+where it was downloaded (it must have openpcrlib.py in the same folder, for now),
+and type 'python3 openpycr.py --help' for usage information. For more specific
+help on the subcommands try 'python3 openpycr (subcommand) --help'.
