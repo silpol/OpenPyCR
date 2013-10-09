@@ -1,9 +1,7 @@
 import time
 import sys
 import os
-import json
-import subprocess
-import mmap
+import collections
 
 if "linux" not in sys.platform:
     print("OpenPyCR uses system calls that are only available on Linux platforms. Your platform -",
@@ -42,55 +40,49 @@ class OpenPCR:
 
     @property
     def ready(self):
-        if os.path.exists(self.devicepath) and os.path.exists(os.path.join(self.devicepath,"STATUS.TXT")):
-            return True
-        else:
-            return False
-
-    def sendprogram(self, program):
-        'Sends a program to the OpenPCR and prints a verification if successful.'
+        return os.path.exists(self.devicepath) and os.path.exists(os.path.join(self.devicepath,"STATUS.TXT"))
+        
+    def sendprogram(self, program, status_callback=lambda x:None):
+        '''Sends a program to the OpenPCR and prints a verification if successful.
+        This can optionally send status messages (as a single string arg) to a callback.'''
         if not self.ready:
             raise OpenPCRError("Cannot send program as device is not ready.")
-        # TODO: Clean this mess up.
-        CurrentNonce = self.readstatus()['nonce']
-        # Nonces should overflow, but no point going larger than 99, maybe even 9.
-        NewNonce = CurrentNonce + 1 if CurrentNonce < 100 else 1
-        NonceCMD = 'd={}'.format(str(NewNonce))
-        # Chop up program string, insert nonce, and reassemble for sending.
-        dissectedprogram = program.split("&")
-        for item in dissectedprogram:
-            if item[0]=='d': # If there's already a nonce in this program for some reason..
-                print("Found existing nonce value ('d=xxx') in program. Removing..")
-                noncelistindex = dissectedprogram.index(item) # Find index to delete first..
-                del(dissectedprogram[noncelistindex]) # Then kill it with fire.
 
-        dissectedprogram.insert(1,NonceCMD) # Add new nonce to program.
-        assembledprogram = "&".join(dissectedprogram) # Reassembles YAML-formatted program.
-        self._sendprogram(assembledprogram)
+        NewNonce = self.readstatus()['nonce'] + 1 if CurrentNonce < 100 else 1 # Overflow; no need for excess digits.
+        # OrderedDict preserves key order; may be critical for leading 's=ACGTC' signal.
+        dissectedprogram = collections.OrderedDict([x.split("=",1) for x in program.split("&")])
+        dissectedprogram['d'] = str(NewNonce)
+        self._sendprogram('&'.join(['='.join([x,y]) for x,y in dissectedprogram.items()]))
 
-        time.sleep(2) # If no waiting time is given, readstatus fails.
+        # Wait 2s to let OpenPCR recover from sending program, 
+        # then further 5s for program update.
+        status_callback("Waiting for two seconds for OpenPCR to resume responding.")
+        Status = time.sleep(2) # Now Status == None, not undefined.
         started_waiting = time.time()
-        Status = None
         while time.time() - started_waiting < 5:
             try:
                 Status = self.readstatus()
                 break
             except ValueError:
-                print("Waiting for OpenPCR to respond..")
+                status_callback("Still waiting for OpenPCR to respond..")
                 time.sleep(0.5)
-        if Status:
-            if Status['nonce'] == NewNonce:
-                print("Program sent successfully.")
-            else:
-                print("Nonce values unchanged; program may not have sent correctly.")
         else:
-            print("OpenPCR not responding to checkstatus calls. Giving up.")
+            status_callback("Device failed to respond to status queries after sending updated program.")
+            raise OpenPCRError("Device failed to respond to status queries after sending updated program.")
+        # Printouts are nice and all but silent success and angry fail are more
+        # useful for building other applications on top of this.
+        if Status and Status['nonce'] == NewNonce:
+            status_callback("Program successfully sent.")
+        else:
+            status_callback("Program sent to device but device does not report receipt.")
+            raise OpenPCRError("Program sent to device but device does not report receipt.")
 
     def _sendprogram(self,program):
         with open(os.path.join(self.devicepath,'CONTROL.TXT'), mode='w') as Fout:
             Fout.write(program)
 
     def test(self):
+        # Expand here; this should test sending, sequential status reads, and stopping.
         self.sendprogram('s=ACGTC&c=start&n=OpenPyCR Test Program&p=(20[10|45|TestStep1][20|25|TestStep2])')
 
     def stop(self):
@@ -109,9 +101,7 @@ class OpenPCR:
             os.posix_fadvise(InF.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
             fc = InF.read()
         # Return until first null character.
-        # Reading in non-binary mode leads to odd extra whitespace due to nulls
-        # followed by whitespace; trimming nulls from a string seems silly, so
-        # stick to binary, strip and decode; let Python re-null strings as desired.
+        # Odd null/whitespace pattern is incompatible with unicode mode.
         return fc.split(b"\0",1)[0].decode()
 
     def readstatus(self):

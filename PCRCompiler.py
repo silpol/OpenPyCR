@@ -119,7 +119,7 @@ def parse_program(prog_string):
     headers = {}
     for line in prog_headers.splitlines():
         tag, value = [x.strip() for x in line.split(":",1)]
-        headers[tag.lower()] = value
+        headers[tag.lower()] = value.replace("&","+").replace("=",":") # Removing reserved YAML characters because shut up
 
     # Extract the two headers actually used; rest ignored.
     program_title = headers.get('title','')
