@@ -2,7 +2,7 @@
 A pure-python controller and monitor application for the OpenPCR thermal cycler.
 by Cathal Garvey, copyright 2013, licensed under the GNU Affero GPL v3 or later.
 
-Support more Free/Libre biotech tools: [![gittip](https://img.shields.io/gittip/onetruecathal.svg)](https://www.gittip.com/onetruecathal/)
+Support more Free/Libre biotech tools: [![liberapay](https://img.shields.io/liberapay/goal/silpol.svg?logo=liberapay)](https://liberapay.com/silpol/)
 
 ## What is OpenPyCR?
 OpenPyCR is an alternative controller/monitor program for the OpenPCR. The program
